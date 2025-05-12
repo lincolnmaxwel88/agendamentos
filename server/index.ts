@@ -93,13 +93,9 @@ app.use((req, res, next) => {
       }
     });
 
-    // Use a porta do ambiente ou 5000 como fallback
-    const port = process.env.PORT ? parseInt(process.env.PORT) : 5000;
-    server.listen({
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    }, () => {
+    // Use a porta do ambiente ou 3000 como fallback
+    const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+    server.listen(port, "localhost", () => {
       log(`Servidor rodando na porta ${port} em modo ${app.get("env")}`);
     });
   } catch (error) {

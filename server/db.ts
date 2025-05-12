@@ -1,19 +1,20 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
-import ws from 'ws';
+// Importação do PostgreSQL local
+import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from '@shared/schema';
+import * as dotenv from 'dotenv';
 
-// Configuração para WebSockets
-neonConfig.webSocketConstructor = ws;
+// Carrega as variáveis de ambiente do arquivo .env
+dotenv.config();
 
 // Verifica se a URL do banco de dados está definida
 if (!process.env.DATABASE_URL) {
   throw new Error(
-    "DATABASE_URL deve ser definida. Você esqueceu de provisionar um banco de dados?"
+    "DATABASE_URL deve ser definida no arquivo .env. Você esqueceu de provisionar um banco de dados?"
   );
 }
 
-// Cria o pool de conexão
+// Cria o pool de conexão com o PostgreSQL local
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 // Exporta a instância do Drizzle ORM
