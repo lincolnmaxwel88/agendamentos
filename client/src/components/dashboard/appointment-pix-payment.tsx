@@ -6,6 +6,7 @@ import { Loader2, AlertCircle, RefreshCw, CheckCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { PaymentStatusChecker } from "@/components/payment/payment-status-checker";
 
 interface PixPaymentProps {
   appointmentId: number;
@@ -239,6 +240,20 @@ export const AppointmentPixPayment: React.FC<PixPaymentProps> = ({ appointmentId
             )}
           </Button>
         </CardFooter>
+      )}
+      
+      {/* Componente que verifica automaticamente o status do pagamento */}
+      {paymentStatus?.pixTransactionId && (
+        <PaymentStatusChecker
+          appointmentId={appointmentId}
+          transactionId={paymentStatus.pixTransactionId}
+          onPaymentConfirmed={() => {
+            // Revalidar os detalhes do agendamento
+            queryClient.invalidateQueries({ queryKey: ["/api/my-appointments"] });
+            // Parar a atualização automática
+            setRefreshInterval(null);
+          }}
+        />
       )}
     </Card>
   );

@@ -2973,10 +2973,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Rotas de pagamento PIX
   // Rota para gerar código PIX para um agendamento
+  // Não exige autenticação para permitir pagamentos de clientes externos
   app.post("/api/payments/generate-pix", async (req: Request, res: Response) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: "Não autenticado" });
-    }
+    console.log("Recebendo solicitação para gerar PIX:", req.body);
 
     try {
       const { appointmentId, amount } = req.body;
@@ -2991,10 +2990,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Agendamento não encontrado" });
       }
 
-      // Verificar se o usuário é o provedor do agendamento
-      const provider = await storage.getProviderByUserId(req.user.id);
-      if (!provider || provider.id !== appointment.providerId) {
-        return res.status(403).json({ error: "Acesso negado" });
+      // Como removemos a autenticação, não precisamos mais verificar se o usuário é o provedor
+      // Buscamos o provedor diretamente pelo ID do agendamento
+      const provider = await storage.getProvider(appointment.providerId);
+      if (!provider) {
+        return res.status(404).json({ error: "Provedor não encontrado" });
       }
 
       // Buscar cliente 
@@ -3027,6 +3027,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Rota de webhook para receber notificações do Mercado Pago
+  app.post("/api/payments/webhook", async (req: Request, res: Response) => {
+    console.log("Webhook do Mercado Pago recebido:", req.body);
+    
+    try {
+      // Verificar se é uma notificação de pagamento
+      if (req.body.action === "payment.updated" || req.body.action === "payment.created") {
+        const paymentId = req.body.data?.id;
+        if (!paymentId) {
+          console.error("ID de pagamento não encontrado na notificação");
+          return res.status(400).send("ID de pagamento não encontrado");
+        }
+        
+        console.log(`Processando notificação de pagamento: ${paymentId}`);
+        
+        // Buscar o agendamento pelo ID de transação do Mercado Pago
+        const appointment = await db.query.appointments.findFirst({
+          where: eq(appointments.pixTransactionId, paymentId.toString())
+        });
+        
+        if (!appointment) {
+          console.error(`Agendamento não encontrado para o pagamento ${paymentId}`);
+          return res.status(404).send("Agendamento não encontrado");
+        }
+        
+        // Verificar o status do pagamento no Mercado Pago
+        const paymentStatus = await paymentService.getMercadoPagoPaymentStatus(paymentId);
+        
+        if (paymentStatus === "approved") {
+          // Atualizar o status do agendamento para confirmado
+          await storage.updateAppointmentStatus(
+            appointment.id, 
+            AppointmentStatus.CONFIRMED, 
+            "Pagamento confirmado pelo Mercado Pago"
+          );
+          
+          console.log(`Agendamento ${appointment.id} confirmado após pagamento ${paymentId}`);
+          
+          // Criar notificação para o provedor
+          await storage.createNotification({
+            userId: appointment.providerId,
+            title: "Pagamento confirmado",
+            message: `O pagamento do agendamento #${appointment.id} foi confirmado.`,
+            type: "payment"
+          });
+        }
+      }
+      
+      // Sempre retornar 200 para o Mercado Pago
+      return res.status(200).send("OK");
+    } catch (error: any) {
+      console.error("Erro ao processar webhook do Mercado Pago:", error);
+      // Sempre retornar 200 para o Mercado Pago, mesmo em caso de erro
+      return res.status(200).send("OK");
+    }
+  });
+  
   // Rota para verificar status de pagamento
   // Cancelar pagamento e agendamento para clientes
   app.post("/api/payments/:appointmentId/cancel", async (req: Request, res: Response) => {
@@ -3097,9 +3154,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/payments/:appointmentId/status", async (req: Request, res: Response) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: "Não autenticado" });
-    }
+    // Permitir acesso sem autenticação para verificação de status de pagamento
+    // Isso é necessário para que o componente de verificação automática funcione
 
     try {
       const appointmentId = parseInt(req.params.appointmentId);
@@ -3110,10 +3166,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Agendamento não encontrado" });
       }
 
-      // Verificar se o usuário é o provedor do agendamento ou o cliente (no futuro)
-      const provider = await storage.getProviderByUserId(req.user.id);
-      if (!provider || provider.id !== appointment.providerId) {
-        return res.status(403).json({ error: "Acesso negado" });
+      // Se o usuário estiver autenticado, verificar se é o provedor do agendamento
+      // Caso contrário, permitir acesso para verificação de status
+      if (req.isAuthenticated() && req.user) {
+        const provider = await storage.getProviderByUserId(req.user.id);
+        if (provider && provider.id !== appointment.providerId) {
+          return res.status(403).json({ error: "Acesso negado" });
+        }
       }
 
       if (!appointment.pixTransactionId) {

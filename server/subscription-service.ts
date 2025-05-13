@@ -7,6 +7,7 @@ import { eq, and, desc, inArray } from 'drizzle-orm';
 import { PaymentService } from './payment-service';
 import { storage } from './storage';
 import { User } from '../shared/schema';
+import { MercadoPagoConfig, Payment } from 'mercadopago';
 
 // Instância do serviço de pagamento
 const paymentService = new PaymentService();
@@ -159,15 +160,70 @@ export class SubscriptionService {
         throw new Error('Provider do admin não encontrado para processamento do pagamento');
       }
       
+      // Verificar se o admin tem o token de pagamento configurado
+      if (!adminProvider.pixMercadoPagoToken) {
+        throw new Error('Token do Mercado Pago não configurado pelo administrador. Configure nas configurações de PIX.');
+      }
+      
+      const tokenToUse = adminProvider.pixMercadoPagoToken;
+      console.log(`Gerando pagamento PIX para assinatura usando token do admin`);
+      console.log(`Token usado: ${tokenToUse.substring(0, 10)}...`);
+      
       // Gerar o pagamento PIX usando o serviço de pagamento
-      const pixResponse = await paymentService.generatePix({
-        appointmentId: 0, // Não é um agendamento
-        providerId: adminProvider.id,
-        amount: plan.price / 100, // Converter de centavos para reais
-        clientName: user.name,
-        clientEmail: user.email,
-        serviceDescription: `Assinatura ${plan.name} - ${plan.durationMonths} mês(es)`
-      });
+      // Usar diretamente a API do Mercado Pago para garantir que não use o modo de teste
+      console.log("Gerando PIX REAL para assinatura");
+      
+      // Criar cliente do Mercado Pago com o token apropriado
+      const config = new MercadoPagoConfig({ accessToken: tokenToUse });
+      const paymentClient = new Payment(config);
+      
+      // Criar preferência de pagamento
+      const expiration = new Date();
+      expiration.setMinutes(expiration.getMinutes() + 30);
+      
+      // Ajustar o valor com base na porcentagem configurada
+      const formattedAmount = parseFloat((plan.price / 100).toFixed(2));
+      
+      // Usar número de CPF/CNPJ do provider se disponível
+      const identificationNumber = adminProvider.pixIdentificationNumber || "12345678909";
+      
+      // Criar dados do pagamento
+      const paymentData = {
+        transaction_amount: formattedAmount,
+        description: `Assinatura ${plan.name} - ${plan.durationMonths} mês(es)`,
+        payment_method_id: 'pix',
+        payer: {
+          email: user.email || 'cliente@example.com',
+          first_name: user.name.split(' ')[0],
+          last_name: user.name.split(' ').slice(1).join(' ') || 'Sobrenome',
+          identification: {
+            type: "CPF", 
+            number: identificationNumber
+          }
+        },
+        notification_url: `https://meuagendamento.replit.app/api/payments/webhook`
+      };
+      
+      console.log("Enviando requisição para Mercado Pago:", JSON.stringify(paymentData, null, 2));
+      
+      // Criar o pagamento no Mercado Pago
+      const result = await paymentClient.create({ body: paymentData });
+      
+      console.log("Resposta do Mercado Pago:", JSON.stringify(result, null, 2));
+      
+      // Extrair dados do QR code
+      if (!result.id) {
+        throw new Error('Falha ao gerar pagamento PIX: ID da transação não retornado pelo Mercado Pago');
+      }
+      
+      const pixResponse = {
+        transactionId: result.id.toString(),
+        qrCode: result.point_of_interaction?.transaction_data?.qr_code || '',
+        qrCodeBase64: result.point_of_interaction?.transaction_data?.qr_code_base64 || '',
+        expiresAt: new Date(result.date_of_expiration || expiration)
+      };
+      
+      console.log("PIX gerado com sucesso. ID da transação:", pixResponse.transactionId);
       
       // Salvar a transação no banco de dados
       const [transaction] = await db.insert(subscriptionTransactions)
@@ -210,8 +266,28 @@ export class SubscriptionService {
         throw new Error('Transação não encontrada');
       }
       
-      // Verificar o status do pagamento via Mercado Pago
-      const paymentStatus = await paymentService.checkPaymentStatus(transactionId);
+      // Buscar o token do admin para verificar o pagamento
+      const adminUser = await storage.getUserByUsername('admin');
+      if (!adminUser) {
+        throw new Error('Usuário admin não encontrado para verificar o pagamento');
+      }
+      
+      const adminProvider = await storage.getProviderByUserId(adminUser.id);
+      if (!adminProvider) {
+        throw new Error('Provider do admin não encontrado para verificar o pagamento');
+      }
+      
+      // Verificar se o admin tem o token de pagamento configurado
+      if (!adminProvider.pixMercadoPagoToken) {
+        throw new Error('Token do Mercado Pago não configurado pelo administrador. Configure nas configurações de PIX.');
+      }
+      
+      const tokenToUse = adminProvider.pixMercadoPagoToken;
+      console.log(`Verificando status de pagamento usando token do admin`);
+      console.log(`Token usado: ${tokenToUse.substring(0, 10)}...`);
+      
+      // Verificar o status do pagamento via Mercado Pago usando o token apropriado
+      const paymentStatus = await paymentService.checkPaymentStatus(transactionId, tokenToUse);
       
       // Se o status mudou, atualizar na base
       if (transaction.status !== paymentStatus.status) {

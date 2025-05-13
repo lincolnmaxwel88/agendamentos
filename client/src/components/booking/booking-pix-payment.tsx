@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import QRCode from "qrcode";
 import { Progress } from "@/components/ui/progress";
+import { PaymentStatusChecker } from "@/components/payment/payment-status-checker";
 
 interface BookingPixPaymentProps {
   appointmentId: number;
@@ -484,6 +485,15 @@ const BookingPixPayment: React.FC<BookingPixPaymentProps> = ({
           )}
         </Button>
       </CardFooter>
+      
+      {/* Componente que verifica automaticamente o status do pagamento */}
+      {pixData && pixData.transactionId && (
+        <PaymentStatusChecker
+          appointmentId={appointmentId}
+          transactionId={pixData.transactionId}
+          onPaymentConfirmed={() => onPaymentComplete('paid')}
+        />
+      )}
     </Card>
   );
 };
