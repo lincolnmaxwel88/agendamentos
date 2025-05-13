@@ -1,6 +1,49 @@
+# Dependências
 node_modules
+
+# Arquivos de build
 dist
+build
+
+# Arquivos de ambiente
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs
+*.log
+
+# Arquivos do sistema
 .DS_Store
+Thumbs.db
+
+# Arquivos de upload e mídia
 server/public
+uploads
+
+# Arquivos de cache
+.cache
+.vite
 vite.config.ts.*
+
+# Arquivos temporários
+*.tmp
+*.temp
 *.tar.gz
+
+# Arquivos de IDE e editores
+.idea
+.vscode
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# Diretórios específicos
+nova_versao_agendamentos/

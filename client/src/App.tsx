@@ -16,6 +16,7 @@ import EmailVerificationPage from "@/pages/email-verification-page";
 import FinancialReport from "@/pages/financial-report";
 import AdminPage from "@/pages/admin-page";
 import UsersPage from "@/pages/admin/users-page";
+import ProfilePage from "@/pages/profile-page";
 import MainNav from "@/components/layout/main-nav";
 import MobileNav from "@/components/layout/mobile-nav";
 import UserAvatar from "@/components/layout/user-avatar";
@@ -265,6 +266,15 @@ function Router() {
         element={
           <MainLayout>
             <Settings />
+          </MainLayout>
+        } 
+      />
+      
+      <ProtectedRoute 
+        path="/profile" 
+        element={
+          <MainLayout>
+            <ProfilePage />
           </MainLayout>
         } 
       />

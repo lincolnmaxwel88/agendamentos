@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
+import multer from "multer";
 import { 
   insertServiceSchema, 
   insertClientSchema, 
@@ -20,7 +21,7 @@ import {
 } from "@shared/schema";
 import { and, eq, gt, gte, lte, ne, sql } from "drizzle-orm";
 import { z } from "zod";
-import { setupAuth, hashPassword } from "./auth";
+import { setupAuth, hashPassword, comparePasswords } from "./auth";
 import { WebSocketServer, WebSocket } from "ws";
 import { verifyToken, generateVerificationToken, sendVerificationEmail, sendWelcomeEmail, isEmailServiceConfigured } from "./email-service";
 
@@ -469,6 +470,289 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Configuração do multer para upload de arquivos
+  const avatarStorage = multer.memoryStorage();
+  const avatarUpload = multer({
+    storage: avatarStorage,
+    limits: {
+      fileSize: 5 * 1024 * 1024, // limite de 5MB
+    },
+    fileFilter: (req, file, cb) => {
+      // Aceitar apenas arquivos de imagem
+      if (!file.mimetype.startsWith('image/')) {
+        return cb(new Error('Apenas imagens são permitidas'));
+      }
+      cb(null, true);
+    }
+  });
+
+  // Rota para upload de avatar
+  app.post("/api/user/upload-avatar", avatarUpload.single('avatar'), async (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Não autenticado" });
+    }
+    
+    try {
+      const userId = req.user.id;
+      
+      // Verificar se o arquivo foi enviado
+      if (!req.file) {
+        return res.status(400).json({ error: "Dados da imagem não fornecidos" });
+      }
+      
+      // Converter a imagem para base64
+      const imageBuffer = req.file.buffer;
+      const contentType = req.file.mimetype;
+      const imageData = `data:${contentType};base64,${imageBuffer.toString('base64')}`;
+      
+      // Atualizar o usuário com a URL da imagem
+      const updatedUser = await storage.updateUser(userId, { avatarUrl: imageData });
+      if (!updatedUser) {
+        return res.status(500).json({ error: "Falha ao atualizar avatar" });
+      }
+      
+      // Atualizar a sessão com os novos dados do usuário via login
+      const { password: _, ...userWithoutPassword } = updatedUser;
+      
+      req.login(updatedUser, (err) => {
+        if (err) {
+          console.error("Erro ao atualizar sessão:", err);
+        }
+        
+        res.status(200).json({ 
+          success: true, 
+          avatarUrl: imageData,
+          user: userWithoutPassword
+        });
+      });
+    } catch (error) {
+      console.error("Erro ao fazer upload do avatar:", error);
+      res.status(500).json({ error: "Erro ao processar o upload da imagem" });
+    }
+  });
+  
+  // Rota para remover avatar
+  app.delete("/api/user/avatar", async (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Não autenticado" });
+    }
+    
+    try {
+      const userId = req.user.id;
+      
+      // Atualizar o usuário para remover o avatar
+      const updatedUser = await storage.updateUser(userId, { avatarUrl: null });
+      if (!updatedUser) {
+        return res.status(500).json({ error: "Falha ao remover avatar" });
+      }
+      
+      // Atualizar a sessão com os novos dados do usuário via login
+      const { password: _, ...userWithoutPassword } = updatedUser;
+      
+      req.login(updatedUser, (err) => {
+        if (err) {
+          console.error("Erro ao atualizar sessão:", err);
+        }
+        
+        res.status(200).json({ 
+          success: true, 
+          user: userWithoutPassword
+        });
+      });
+    } catch (error) {
+      console.error("Erro ao remover avatar:", error);
+      res.status(500).json({ error: "Erro ao remover a imagem de perfil" });
+    }
+  });
+  
+  // Rota para atualizar perfil do usuário
+  app.patch("/api/user/profile", async (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Não autenticado" });
+    }
+    
+    try {
+      const userId = req.user.id;
+      const { name, email } = req.body;
+      
+      // Validar dados
+      if (!name || !email) {
+        return res.status(400).json({ error: "Nome e email são obrigatórios" });
+      }
+      
+      // Verificar se o email já está em uso por outro usuário
+      if (email !== req.user.email) {
+        const existingUser = await storage.getUserByEmail(email);
+        if (existingUser && existingUser.id !== userId) {
+          return res.status(400).json({ error: "Este email já está em uso" });
+        }
+      }
+      
+      // Atualizar o usuário
+      const updatedUser = await storage.updateUser(userId, { name, email });
+      if (!updatedUser) {
+        return res.status(500).json({ error: "Falha ao atualizar perfil" });
+      }
+      
+      // Atualizar a sessão com os novos dados do usuário via login
+      const { password: _, ...userWithoutPassword } = updatedUser;
+      
+      req.login(updatedUser, (err) => {
+        if (err) {
+          console.error("Erro ao atualizar sessão:", err);
+          return res.status(500).json({ error: "Erro ao atualizar sessão" });
+        }
+        
+        res.status(200).json({ 
+          success: true, 
+          user: userWithoutPassword
+        });
+      });
+    } catch (error) {
+      console.error("Erro ao atualizar perfil:", error);
+      res.status(500).json({ error: "Erro ao atualizar perfil" });
+    }
+  });
+  
+  // Configuração do multer para upload de arquivos
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 5 * 1024 * 1024, // 5MB
+    },
+    fileFilter: (req, file, cb) => {
+      // Aceitar apenas imagens
+      if (file.mimetype.startsWith('image/')) {
+        cb(null, true);
+      } else {
+        cb(null, false);
+      }
+    },
+  });
+
+  // Rota para upload de avatar
+  app.post("/api/user/upload-avatar", upload.single('avatar'), async (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Não autenticado" });
+    }
+    
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "Nenhum arquivo enviado ou formato inválido" });
+      }
+      
+      const userId = req.user.id;
+      
+      // Converter o buffer para base64
+      const avatarBase64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      
+      // Atualizar o usuário com o avatar
+      const updatedUser = await storage.updateUser(userId, { avatarUrl: avatarBase64 });
+      if (!updatedUser) {
+        return res.status(500).json({ error: "Falha ao atualizar avatar" });
+      }
+      
+      // Atualizar a sessão com os novos dados do usuário
+      const { password: _, ...userWithoutPassword } = updatedUser;
+      
+      req.login(updatedUser, (err) => {
+        if (err) {
+          console.error("Erro ao atualizar sessão:", err);
+          return res.status(500).json({ error: "Erro ao atualizar sessão" });
+        }
+        
+        res.status(200).json({ 
+          success: true, 
+          user: userWithoutPassword
+        });
+      });
+    } catch (error) {
+      console.error("Erro ao fazer upload do avatar:", error);
+      res.status(500).json({ error: "Erro ao fazer upload do avatar" });
+    }
+  });
+  
+  // Rota para remover avatar
+  app.delete("/api/user/avatar", async (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Não autenticado" });
+    }
+    
+    try {
+      const userId = req.user.id;
+      
+      // Atualizar o usuário removendo o avatar
+      const updatedUser = await storage.updateUser(userId, { avatarUrl: null });
+      if (!updatedUser) {
+        return res.status(500).json({ error: "Falha ao remover avatar" });
+      }
+      
+      // Atualizar a sessão com os novos dados do usuário
+      const { password: _, ...userWithoutPassword } = updatedUser;
+      
+      req.login(updatedUser, (err) => {
+        if (err) {
+          console.error("Erro ao atualizar sessão:", err);
+          return res.status(500).json({ error: "Erro ao atualizar sessão" });
+        }
+        
+        res.status(200).json({ 
+          success: true, 
+          user: userWithoutPassword
+        });
+      });
+    } catch (error) {
+      console.error("Erro ao remover avatar:", error);
+      res.status(500).json({ error: "Erro ao remover avatar" });
+    }
+  });
+
+  // Rota para atualizar senha do usuário
+  app.patch("/api/user/password", async (req: Request, res: Response) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Não autenticado" });
+    }
+    
+    try {
+      const userId = req.user.id;
+      const { currentPassword, newPassword } = req.body;
+      
+      // Validar dados
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: "Senha atual e nova senha são obrigatórias" });
+      }
+      
+      // Obter o usuário pelo ID
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "Usuário não encontrado" });
+      }
+      
+      // Verificar se a senha atual está correta usando o método comparePasswords do auth.ts
+      const isPasswordValid = await comparePasswords(currentPassword, user.password);
+      if (!isPasswordValid) {
+        return res.status(400).json({ error: "Senha atual incorreta" });
+      }
+      
+      // Hash da nova senha
+      const hashedPassword = await hashPassword(newPassword);
+      
+      // Atualizar a senha do usuário
+      const updatedUser = await storage.updateUser(userId, { password: hashedPassword });
+      if (!updatedUser) {
+        return res.status(500).json({ error: "Falha ao atualizar senha" });
+      }
+      
+      res.status(200).json({ 
+        success: true, 
+        message: "Senha atualizada com sucesso"
+      });
+    } catch (error) {
+      console.error("Erro ao atualizar senha:", error);
+      res.status(500).json({ error: "Erro ao atualizar senha" });
+    }
+  });
+
   // Endpoint para reenviar email de verificação
   app.post("/api/resend-verification", async (req: Request, res: Response) => {
     try {
@@ -1607,6 +1891,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (provider) {
         console.log(`Provider encontrado: ${provider.name} (ID: ${provider.id})`);
+        
+        // Buscar dados do usuário associado para obter o avatarUrl
+        if (provider.userId) {
+          try {
+            const user = await storage.getUser(provider.userId);
+            if (user && user.avatarUrl) {
+              // Se o provider não tiver avatarUrl mas o usuário tiver, usar o do usuário
+              if (!provider.avatarUrl) {
+                provider = { ...provider, avatarUrl: user.avatarUrl };
+              }
+            }
+          } catch (err) {
+            console.log("Erro ao buscar dados do usuário associado:", err);
+            // Não interromper o fluxo se houver erro ao buscar o usuário
+          }
+        }
+        
         return res.json(provider);
       }
       

@@ -1,4 +1,5 @@
 import React from "react";
+import { useLocation } from "wouter";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -9,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { User, Settings, LogOut } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 interface UserAvatarProps {
   name: string;
@@ -17,13 +19,31 @@ interface UserAvatarProps {
 }
 
 const UserAvatar: React.FC<UserAvatarProps> = ({ name, email, imageUrl }) => {
+  const [, navigate] = useLocation();
+  const { logoutMutation } = useAuth();
+  
   // Extract initials from name
-  const initials = name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .substring(0, 2);
+  const initials = name 
+    ? name
+        .split(" ")
+        .filter(n => n) // Remove empty strings
+        .map((n) => n[0] || '')
+        .join("")
+        .toUpperCase()
+        .substring(0, 2)
+    : "U";
+    
+  const handleNavigateToProfile = () => {
+    navigate("/profile");
+  };
+  
+  const handleNavigateToSettings = () => {
+    navigate("/settings");
+  };
+  
+  const handleLogout = () => {
+    logoutMutation.mutate();
+  };
 
   return (
     <div className="ml-3 relative">
@@ -50,16 +70,16 @@ const UserAvatar: React.FC<UserAvatarProps> = ({ name, email, imageUrl }) => {
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem>
+          <DropdownMenuItem onClick={handleNavigateToProfile}>
             <User className="mr-2 h-4 w-4" />
             <span>Perfil</span>
           </DropdownMenuItem>
-          <DropdownMenuItem>
+          <DropdownMenuItem onClick={handleNavigateToSettings}>
             <Settings className="mr-2 h-4 w-4" />
             <span>Configurações</span>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem>
+          <DropdownMenuItem onClick={handleLogout}>
             <LogOut className="mr-2 h-4 w-4" />
             <span>Sair</span>
           </DropdownMenuItem>

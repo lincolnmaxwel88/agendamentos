@@ -123,12 +123,13 @@ const MobileNav: React.FC = () => {
               </div>
             )}
             <div className="mt-3 space-y-1">
-              <a
-                href="#"
+              <Link
+                href="/profile"
                 className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                onClick={() => setIsOpen(false)}
               >
                 Seu Perfil
-              </a>
+              </Link>
               <Link
                 href="/settings"
                 className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"

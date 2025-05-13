@@ -4,6 +4,21 @@ import BookingForm from "@/components/booking/booking-form";
 import { Calendar } from "lucide-react";
 import { useLocation } from "wouter";
 
+// Interface para o provider incluindo o avatarUrl
+interface Provider {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  specialties: string;
+  workingHoursStart: number;
+  workingHoursEnd: number;
+  bookingLink?: string;
+  avatarUrl?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 const BookingPage: React.FC = () => {
   const [providerId, setProviderId] = useState<number | null>(null);
   const [providerLink, setProviderLink] = useState<string | null>(null);
@@ -90,6 +105,17 @@ const BookingPage: React.FC = () => {
     <div className="min-h-screen bg-gray-50 pt-8 pb-12">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-8">
+          {provider && provider.avatarUrl && (
+            <div className="flex flex-col items-center justify-center mb-4">
+              <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-primary-100 mb-3">
+                <img 
+                  src={provider.avatarUrl}
+                  alt={`Foto de ${provider.name}`}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            </div>
+          )}
           <h1 className="text-3xl font-bold text-gray-900">
             {provider ? `Agendamento com ${provider.name}` : 'Agendamento Online'}
           </h1>
